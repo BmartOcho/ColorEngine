@@ -164,6 +164,10 @@ class PressProfile:
             f"or {WINDOWS_COLOR_DIR}. Run: python scripts/fetch_profiles.py"
         )
 
+    def output_intent(self) -> dict:
+        """The output intent the engine writes when it merges files for this condition."""
+        return {"identifier": self.output_condition, "info": self.description, "profile_path": str(self.path())}
+
     def matches_condition(self, identifier: str | None) -> bool:
         if not identifier:
             return False
@@ -252,19 +256,30 @@ def srgb_icc_bytes() -> bytes:
 class ImageCMS:
     """Whole-image conversions from press CMYK (rendered ink) to display RGB and Lab."""
 
-    def __init__(self, press: PressProfile, display_icc: bytes | None = None, paper_white: bool = True):
+    def __init__(self, press: PressProfile, display_icc: bytes | None = None, paper_white: bool = True,
+                 device_icc: bytes | None = None):
         self.press = _open_bytes(press.path().read_bytes())
         self.display_bytes = display_icc or srgb_icc_bytes()
         self.display = _open_bytes(self.display_bytes)
         intent = INTENT_ABSOLUTE_COLORIMETRIC if paper_white else INTENT_RELATIVE_COLORIMETRIC
         self.intent = "absolute (paper white)" if paper_white else "relative (ink only)"
-        self._to_rgb = Transform(self.press, TYPE_CMYK_8, self.display, TYPE_RGB_8, intent, bpc=not paper_white,
+        self._to_device = None
+        source = self.press
+        if device_icc:
+            # Device mode: the RIP converts reference CMYK to device CMYK (relative + BPC);
+            # the proof then shows the device's own gamut and paper.
+            self.device = _open_bytes(device_icc)
+            self._to_device = Transform(self.press, TYPE_CMYK_8, self.device, TYPE_CMYK_8, optimize=True)
+            source = self.device
+        self._to_rgb = Transform(source, TYPE_CMYK_8, self.display, TYPE_RGB_8, intent, bpc=not paper_white,
                                  optimize=True)
         self._lab = _Profile(_lib().cmsCreateLab4Profile(None))
         self._to_lab = Transform(self.press, TYPE_CMYK_8, self._lab, TYPE_Lab_DBL, optimize=True)
 
     def to_rgb(self, cmyk: np.ndarray) -> np.ndarray:
         h, w, _ = cmyk.shape
+        if self._to_device is not None:
+            cmyk = self._to_device(cmyk)
         return self._to_rgb(cmyk).reshape(h, w, 3)
 
     def to_lab(self, cmyk: np.ndarray) -> np.ndarray:

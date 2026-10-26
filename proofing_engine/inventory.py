@@ -77,7 +77,7 @@ def _icc_description(data: bytes) -> str | None:
                 n = int.from_bytes(tag[8:12], "big")
                 return tag[12:12 + n].rstrip(b"\0").decode("latin1")
             if tag[:4] == b"mluc":
-                rec_len = int.from_bytes(tag[16:20], "big")
+                rec_len = int.from_bytes(tag[20:24], "big")  # first record: lang, country, length, offset
                 s_off = int.from_bytes(tag[24:28], "big")
                 return tag[s_off:s_off + rec_len].decode("utf-16-be").rstrip("\0")
     except Exception:

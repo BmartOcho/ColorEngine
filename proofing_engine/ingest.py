@@ -163,7 +163,8 @@ def inspect(pdf: pikepdf.Pdf) -> dict:
     }
 
 
-def ingest(sources: list[Path], job_dir: Path, order: list[int] | None = None) -> tuple[Path, dict]:
+def ingest(sources: list[Path], job_dir: Path, order: list[int] | None = None,
+           output_intent: dict | None = None) -> tuple[Path, dict]:
     """Copy uploads into job_dir/input untouched; return the working file and metadata."""
     input_dir = job_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +182,8 @@ def ingest(sources: list[Path], job_dir: Path, order: list[int] | None = None) -
         merge = None
     else:
         working = work_dir / "merged.pdf"
-        merge = merge_pdfs([input_dir / i["name"] for i in inputs], working, order=order)
+        merge = merge_pdfs([input_dir / i["name"] for i in inputs], working, order=order,
+                           output_intent=output_intent)
     with pikepdf.open(working) as pdf:
         meta = inspect(pdf)
     meta["inputs"] = inputs
@@ -219,10 +221,28 @@ def merge_pdfs(sources: list[Path], out: Path, order: list[int] | None = None,
             if output_intent.get("profile_path"):
                 oi.DestOutputProfile = merged.make_stream(Path(output_intent["profile_path"]).read_bytes(), N=4)
             merged.Root.OutputIntents = merged.make_indirect(pikepdf.Array([oi]))
+        _merged_docinfo(merged, opened)
         merged.save(out, deterministic_id=True)
     finally:
         for o in opened:
             o.close()
     return {"sources": [Path(s).name for s in sources], "order": order,
             "page_map": [{"source": Path(sources[si]).name, "page": pi + 1} for si, pi in seq],
-            "source_output_intents": source_intents}
+            "source_output_intents": source_intents,
+            "output_intent": output_intent["identifier"] if output_intent else None}
+
+
+def _merged_docinfo(merged: pikepdf.Pdf, sources: list[pikepdf.Pdf]) -> None:
+    """Creator / PDF/X claim carried only when every source agrees; never inherited from file 1 alone."""
+    from . import __version__
+
+    def common(key):
+        vals = {_docinfo(s, key) for s in sources}
+        return vals.pop() if len(vals) == 1 else None
+
+    merged.docinfo["/Producer"] = f"Voom proofing engine {__version__} (merge)"
+    creator = common("/Creator")
+    merged.docinfo["/Creator"] = creator or "mixed: " + ", ".join(sorted({_docinfo(s, "/Creator") or "?" for s in sources}))
+    pdfx = {_pdfx_version(s) for s in sources}
+    if len(pdfx) == 1 and None not in pdfx:
+        merged.docinfo["/GTS_PDFXVersion"] = pdfx.pop()

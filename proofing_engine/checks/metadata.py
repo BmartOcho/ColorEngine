@@ -30,9 +30,12 @@ def multiple_output_intents(ctx):
     if merge:
         carried = {s["source"]: [i.get("output_condition_identifier") for i in s["output_intents"]]
                    for s in merge.get("source_output_intents", [])}
-        if len({tuple(v) for v in carried.values()}) > 1:
-            out.append(finding("multiple-output-intents", [], "Merged sources carried different output intents",
-                               sources=carried))
+        written = merge.get("output_intent")
+        if len({tuple(v) for v in carried.values()}) > 1 or any(v != [written] for v in carried.values()):
+            parts = [f"{name}: {', '.join(v) if v else 'none'}" for name, v in carried.items()]
+            out.append(finding("multiple-output-intents", [],
+                               f"Merged sources carried {'; '.join(parts)}. The engine wrote one intent: {written}.",
+                               sources=carried, written=written))
     return out
 
 
@@ -61,7 +64,7 @@ def mixed_creator(ctx):
 @rule("device-profile-missing", "info")
 def device_profile_missing(ctx):
     dev = ctx.device
-    if dev and not dev.get("device_profile"):
+    if dev and not dev.get("device_profile_file"):
         return [finding("device-profile-missing", [],
                         f"{dev['name']} has no ICC in the device manifest; proof shows {ctx.press.description} "
                         "and the press match depends on house curves.", device=dev["id"])]
