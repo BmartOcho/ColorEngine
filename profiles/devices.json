@@ -1,0 +1,62 @@
+{
+  "devices": [
+    {
+      "id": "little-fuji",
+      "name": "Little Fuji (Fiery)",
+      "simulation": "gracol2013",
+      "device_profile": "Voom Default CMYK Gloss Coated",
+      "calibrated": "2026-06-18",
+      "status": "confirmed"
+    },
+    {
+      "id": "large-fuji",
+      "name": "Large Fuji",
+      "simulation": "gracol2013",
+      "device_profile": null,
+      "status": "open: collect from its Fiery"
+    },
+    {
+      "id": "indigo",
+      "name": "HP Indigo",
+      "simulation": "gracol2013",
+      "device_profile": null,
+      "status": "open: collect"
+    },
+    {
+      "id": "offset-1",
+      "name": "Offset 1",
+      "simulation": "gracol2013",
+      "device_profile": null,
+      "status": "reference mode only (house curves)"
+    },
+    {
+      "id": "offset-2",
+      "name": "Offset 2",
+      "simulation": "gracol2013",
+      "device_profile": null,
+      "status": "reference mode only (house curves)"
+    },
+    {
+      "id": "flatbed-uv",
+      "name": "Flatbed UV (white ink)",
+      "simulation": "native",
+      "device_profile": null,
+      "status": "open: RIP profile to collect",
+      "white_ink": true
+    },
+    {
+      "id": "latex-1",
+      "name": "HP Latex 1",
+      "simulation": "native",
+      "device_profile": null,
+      "status": "open: RIP profile to collect"
+    },
+    {
+      "id": "latex-2",
+      "name": "HP Latex 2",
+      "simulation": "native",
+      "device_profile": null,
+      "status": "open: RIP profile to collect"
+    }
+  ]
+}
