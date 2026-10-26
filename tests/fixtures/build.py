@@ -103,3 +103,16 @@ def _set_swatches(pdf, swatches):
            f'<xmpG:Colorants><rdf:Seq>{items}</rdf:Seq></xmpG:Colorants></rdf:li></rdf:Seq></xmpTPg:SwatchGroups>'
            "</rdf:Description></rdf:RDF></x:xmpmeta>")
     pdf.Root.Metadata = pdf.make_stream(xmp.encode(), Type=pikepdf.Name.Metadata, Subtype=pikepdf.Name.XML)
+
+
+def merge_sources(dir_: Path) -> tuple[Path, Path]:
+    """Two InDesign-style sources with different output intents (fixture 3 stand-in)."""
+    a = _base(intent="CGATS TR 001")
+    _page(a, b"0.14 0.68 0.8 0.23 k 9 9 234 162 re f\n")
+    _page(a, b"0.6 0.42 0.67 0.46 k 9 9 234 162 re f\n")
+    b = _base(intent="CGATS21-2-CRPC6")
+    _page(b, b"0.04 0.76 0.98 0.15 k 9 9 234 162 re f\n")
+    pa, pb = dir_ / "badges_a.pdf", dir_ / "badge_b.pdf"
+    a.save(pa, deterministic_id=True)
+    b.save(pb, deterministic_id=True)
+    return pa, pb

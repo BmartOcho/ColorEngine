@@ -17,8 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 render = ["pymupdf>=1.24"]  # optional fallback; proofs use Ghostscript
-api = ["fastapi>=0.110", "uvicorn>=0.29"]
-dev = ["pytest>=8"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+dev = ["pytest>=8", "httpx>=0.27", "proofing-engine[api]"]
 
 [project.scripts]
 proof = "proofing_engine.cli:main"

@@ -39,7 +39,7 @@ def cmd_run(a):
     from .pipeline import run
 
     job_dir = run(a.pdfs, Path(a.out), profile=a.profile, job_id=a.job_id, device=a.device, order=_order(a.order),
-                  remap=a.remap, ppi=a.ppi, separations=a.separations, bleed=a.bleed,
+                  remap=a.remap, ppi=a.ppi, separations=a.separations, bleed=a.bleed, mode=a.mode,
                   display_icc=Path(a.display_profile) if a.display_profile else None, paper_white=not a.ink_only)
     report = json.loads((job_dir / "report.json").read_text())
     for n in (report.get("remap") or {}).get("change_note", []):
@@ -79,19 +79,22 @@ def cmd_verify(a):
     return 1 if findings else 0
 
 
-def cmd_merge(a):
-    from .ingest import merge_pdfs
+def cmd_serve(a):
+    from .api import serve
 
-    info = merge_pdfs(a.pdfs, Path(a.out), order=_order(a.order), output_intent=_intent(a.profile))
-    print(json.dumps(info, indent=1))
+    serve(host=a.host, port=a.port, jobs_dir=Path(a.jobs) if a.jobs else None, workers=a.workers)
     return 0
 
 
-def _intent(profile):
+def cmd_merge(a):
+    from .ingest import merge_pdfs
+
     from .cms import get_press_profile
 
-    p = get_press_profile(profile)
-    return {"identifier": p.output_condition, "info": p.description, "profile_path": str(p.path())}
+    info = merge_pdfs(a.pdfs, Path(a.out), order=_order(a.order),
+                      output_intent=get_press_profile(a.profile).output_intent())
+    print(json.dumps(info, indent=1))
+    return 0
 
 
 def cmd_profiles(a):
@@ -152,8 +155,17 @@ def main(argv=None) -> int:
     proof_opts(ru)
     ru.add_argument("--remap", default="auto", help="auto | none | <table.json>")
     ru.add_argument("--device")
+    ru.add_argument("--mode", choices=("reference", "device"), default="reference",
+                    help="device: proof through the device's own ICC when the manifest has one")
     ru.add_argument("--order")
     ru.set_defaults(fn=cmd_run)
+
+    sv = sub.add_parser("serve", help="LAN API (needs PROOF_API_TOKENS)")
+    sv.add_argument("--host", default="127.0.0.1", help="0.0.0.0 on the station to listen on the LAN")
+    sv.add_argument("--port", type=int, default=8750)
+    sv.add_argument("--jobs", help="job folder root (default PROOF_JOBS_DIR or ./jobs)")
+    sv.add_argument("--workers", type=int)
+    sv.set_defaults(fn=cmd_serve)
 
     ap_ = sub.add_parser("approve", help="record the customer's approval (SHA-256) in job.json")
     ap_.add_argument("job", help="job folder")

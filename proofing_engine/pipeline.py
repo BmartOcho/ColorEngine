@@ -7,6 +7,7 @@ import platform
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import pikepdf
 
@@ -88,7 +89,7 @@ def analyze(sources: list[Path], out_root: Path, profile: str | None = None, job
     job_dir = Path(out_root) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc).isoformat()
-    working, meta = ingest([Path(s) for s in sources], job_dir, order=order)
+    working, meta = ingest([Path(s) for s in sources], job_dir, order=order, output_intent=press.output_intent())
     engine = ColorEngine(press)
     dev = load_device(device)
     cfg = {**DEFAULT_CONFIG, **(config or {})}
@@ -102,23 +103,31 @@ def analyze(sources: list[Path], out_root: Path, profile: str | None = None, job
 def run(sources: list[Path], out_root: Path, profile: str | None = None, job_id: str | None = None,
         device: str | None = None, config: dict | None = None, order: list[int] | None = None,
         remap: str | dict | None = "auto", ppi: int = 150, separations: bool = False, bleed: bool = False,
-        display_icc: Path | None = None, paper_white: bool = True) -> Path:
+        display_icc: Path | None = None, paper_white: bool = True, mode: str = "reference",
+        progress: Callable[[float, str], None] | None = None) -> Path:
     """All five stages. With a remap the proof, report and top-level files describe normalized.pdf;
-    the original's inventory and findings are kept under before/."""
+    the original's inventory and findings are kept under before/.
+
+    ``mode="device"`` proofs through the device's own ICC when its manifest entry has one;
+    otherwise the proof stays in reference mode (and `device-profile-missing` says so).
+    """
     from .remap import apply_remap, derive_auto_table
     from .render import compare_pages, render_proofs
 
+    step = progress or (lambda _f, _s: None)
+    step(0.0, "ingest")
     press = get_press_profile(profile)
     job_id = job_id or default_job_id(sources[0], press.name)
     job_dir = Path(out_root) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc).isoformat()
-    working, meta = ingest([Path(s) for s in sources], job_dir, order=order)
+    working, meta = ingest([Path(s) for s in sources], job_dir, order=order, output_intent=press.output_intent())
     engine = ColorEngine(press)
     dev = load_device(device)
     cfg = {**DEFAULT_CONFIG, **(config or {})}
     info = _press_info(press, engine)
 
+    step(0.05, "analyze")
     for stale in ("before", "proof", "compare"):
         shutil.rmtree(job_dir / stale, ignore_errors=True)
     (job_dir / "normalized.pdf").unlink(missing_ok=True)
@@ -135,6 +144,7 @@ def run(sources: list[Path], out_root: Path, profile: str | None = None, job_id:
         table = None
 
     proof_file, after, remap_info, note = working, before, None, []
+    step(0.35, "remap" if table else "render")
     if table:
         normalized = job_dir / "normalized.pdf"
         applied = apply_remap(working, normalized, table, before["inventory"])
@@ -145,6 +155,8 @@ def run(sources: list[Path], out_root: Path, profile: str | None = None, job_id:
             from .ingest import inspect
             nmeta = dict(inspect(pdf), inputs=meta["inputs"], working_file="normalized.pdf",
                          working_sha256=sha256_file(normalized))
+        if meta.get("merge"):
+            nmeta["merge"] = meta["merge"]
         after = _stages_2_3(normalized, nmeta, press, engine, dev, cfg, job_dir)
         note = change_note(table, before["inventory"], meta)
         remap_info = {"table": table, "rewrites": applied["pages"], "normalized_sha256": nmeta["working_sha256"],
@@ -154,9 +166,14 @@ def run(sources: list[Path], out_root: Path, profile: str | None = None, job_id:
                    build_report(meta, before["findings"], before["swatches"], before["versions"], info))
         proof_file = normalized
 
+    step(0.55, "render")
+    render_dev = dev if mode == "device" and dev and dev.get("device_profile_file") else None
     render_meta = render_proofs(proof_file, job_dir / "proof", press, meta, ppi=ppi, separations=separations,
                                 bleed=bleed, display_icc=display_icc.read_bytes() if display_icc else None,
-                                paper_white=paper_white)
+                                paper_white=paper_white, device=render_dev)
+    if mode == "device" and not render_dev:
+        render_meta["mode_note"] = "device mode requested but the device has no ICC; proofed in reference mode"
+    step(0.85, "report")
     comparisons = []
     for f in before["findings"]:
         if f["rule"] == "cross-page-color-drift" and f.get("reference_page"):
@@ -176,6 +193,7 @@ def run(sources: list[Path], out_root: Path, profile: str | None = None, job_id:
     _job_json(job_dir, job_id, info, dev, cfg, meta, started,
               ["ingest", "analyze", "check", "render", "report"] + (["remap"] if table else []),
               {"proof_file": str(Path(proof_file).relative_to(job_dir)), "render": render_meta})
+    step(1.0, "done")
     return job_dir
 
 
