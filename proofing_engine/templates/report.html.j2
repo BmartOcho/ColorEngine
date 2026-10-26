@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof report: {{ report.file.name }}</title>
+<style>
+:root { --ink:#1d1d1f; --muted:#6e6e73; --line:#d9d9de; --error:#c62828; --warn:#b26a00; --info:#3b6ea5; --ok:#2e7d32; }
+* { box-sizing:border-box; }
+body { font:14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); margin:0 auto; max-width:1100px; padding:24px; background:#fff; }
+h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:28px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+.meta { color:var(--muted); }
+.summary { display:flex; gap:12px; margin:16px 0; flex-wrap:wrap; }
+.pill { border:1px solid var(--line); border-radius:6px; padding:6px 12px; }
+.pill b { font-size:18px; margin-right:4px; }
+.error b { color:var(--error); } .warn b { color:var(--warn); } .info b { color:var(--info); }
+.note { border-left:4px solid var(--ok); background:#f3f8f3; padding:10px 14px; margin:8px 0; }
+table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-weight:600; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+.sev { font-weight:600; } .sev.error { color:var(--error); } .sev.warn { color:var(--warn); } .sev.info { color:var(--info); }
+.chip { display:inline-block; width:24px; height:24px; border:1px solid #0002; border-radius:3px; vertical-align:middle; }
+.mono { font-family:ui-monospace, Consolas, monospace; font-size:12px; }
+.outlier td { background:#fff4f4; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:12px; }
+.grid figure { margin:0; } .grid img { width:100%; border:1px solid var(--line); } figcaption { color:var(--muted); font-size:12px; }
+.compare img { width:100%; border:1px solid var(--line); }
+@media print { body { padding:0; } h2 { break-after:avoid; } .grid figure, tr { break-inside:avoid; } }
+</style>
+</head>
+<body>
+<h1>Proof report</h1>
+<div class="meta">{{ report.file.name }} · {{ report.file.pages }} pages · {{ report.file.pdfx or "not PDF/X" }} · output intent {{ report.file.output_intents | join(", ") or "none" }}<br>
+Proofed through <b>{{ report.press.description }}</b>{% if report.render %} · {{ report.render.intent }} · {{ report.render.ppi }} ppi · overprint {{ report.render.overprint }}{% endif %}</div>
+
+<div class="summary">
+  <div class="pill error"><b>{{ report.counts.error }}</b>errors</div>
+  <div class="pill warn"><b>{{ report.counts.warn }}</b>warnings</div>
+  <div class="pill info"><b>{{ report.counts.info }}</b>info</div>
+  {% if report.remap %}<div class="pill">before remap: {{ report.remap.before_counts.error }} errors, {{ report.remap.before_counts.warn }} warnings</div>{% endif %}
+</div>
+
+{% if notes %}
+<h2>Changes in this proof</h2>
+{% for n in notes %}
+<div class="note"><b>{{ n.text }}</b>
+<table>
+<tr><th>Element</th><th>Original</th><th></th><th>Now</th><th></th></tr>
+{% for c in n.changes %}
+<tr><td>{{ c.role | capitalize }}</td><td><span class="chip" style="background:{{ c.from | chip }}"></span></td><td class="mono">{{ c.from | cmyk }}</td>
+<td><span class="chip" style="background:{{ c.to | chip }}"></span></td><td class="mono">{{ c.to | cmyk }}</td></tr>
+{% endfor %}
+</table></div>
+{% endfor %}
+{% endif %}
+
+<h2>Findings</h2>
+{% if findings %}
+<table>
+<tr><th>Severity</th><th>Rule</th><th>Pages</th><th>Detail</th></tr>
+{% for f in findings %}
+<tr><td class="sev {{ f.severity }}">{{ f.severity }}</td><td class="mono">{{ f.rule }}</td><td>{{ f.pages | join(", ") or "document" }}</td><td>{{ f.detail }}</td></tr>
+{% endfor %}
+</table>
+{% else %}<p>No findings.</p>{% endif %}
+
+<h2>Swatches</h2>
+<p class="meta">Each distinct printed colour, clustered at ΔE00 ≤ 2.0; chips are rendered through the press profile. Colour versions: {% for v, ps in report.color_versions.items() %}{{ v }} ({{ ps | length }} pages){% if not loop.last %}, {% endif %}{% endfor %}.</p>
+<table>
+<tr><th></th><th>CMYK %</th><th>Lab</th><th>Pages</th><th>Source</th><th>Coverage pt²</th><th>Note</th></tr>
+{% for s in report.swatches %}
+<tr{% if s.outlier %} class="outlier"{% endif %}><td><span class="chip" style="background:{{ s.cmyk | chip }}"></span></td>
+<td class="mono">{{ s.cmyk | cmyk }}{% if s.members | length > 1 %} <span class="meta">(+{{ s.members | length - 1 }})</span>{% endif %}</td>
+<td class="mono">{{ s.lab | map("round", 1) | join(" / ") }}</td>
+<td>{% if s.pages | length > 8 %}{{ s.pages | length }} pages{% else %}{{ s.pages | join(", ") }}{% endif %}</td>
+<td>{{ s.spaces | join(", ") }}</td><td>{{ s.area_pt2 | round(0) | int }}</td>
+<td>{% if s.outlier %}ΔE00 {{ s.outlier.delta_e }} from {{ s.outlier.nearest | cmyk }}{% endif %}</td></tr>
+{% endfor %}
+</table>
+
+{% if comparisons %}
+<h2>Comparisons</h2>
+{% for c in comparisons %}
+<figure class="compare"><img alt="p{{ c.pages[0] }} vs p{{ c.pages[1] }}" src="data:image/png;base64,{{ c.img }}">
+<figcaption>p{{ c.pages[0] }} | p{{ c.pages[1] }} | ΔE00 heat (white &lt; 1, green → red at 10): mean {{ c.mean_de }}, max {{ c.max_de }}, {{ c.pct_over_1 }}% of pixels over 1 · {{ c.file }}</figcaption></figure>
+{% endfor %}
+{% endif %}
+
+{% if pages %}
+<h2>Pages</h2>
+<div class="grid">
+{% for p in pages %}<figure><a href="{{ p.href }}"><img alt="page {{ p.page }}" src="data:image/png;base64,{{ p.thumb }}"></a><figcaption>Page {{ p.page }}</figcaption></figure>
+{% endfor %}
+</div>
+{% endif %}
+
+<p class="meta">File SHA-256 {{ report.file.sha256 }}{% if report.remap %} · normalized {{ report.remap.normalized_sha256 }}{% endif %} · press profile {{ report.press.file }} ({{ report.press.sha256[:12] }}…)</p>
+</body>
+</html>

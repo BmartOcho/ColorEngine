@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proofing-engine"
+version = "0.1.0"
+description = "Voom proofing engine: colour inventory, press-condition checks and soft proofs"
+requires-python = ">=3.12"
+dependencies = [
+  "pikepdf>=9",
+  "pillow>=10",
+  "numpy>=1.26",
+  "colour-science>=0.4.4",
+  "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+render = ["pymupdf>=1.24"]  # optional fallback; proofs use Ghostscript
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+proof = "proofing_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["proofing_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests", "."]
+filterwarnings = ["ignore:.*related API features are not available"]
+
+[tool.setuptools.package-data]
+proofing_engine = ["templates/*.j2"]
