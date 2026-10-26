@@ -7,7 +7,7 @@ import pytest
 
 warnings.filterwarnings("ignore", message=".*related API features are not available")
 
-from proofing_engine.pipeline import analyze  # noqa: E402
+from proofing_engine.pipeline import analyze, run  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BRIGHTSPOT = Path(os.environ.get("BRIGHTSPOT_PDF", FIXTURES / "brightspot_badges_64.pdf"))
@@ -48,3 +48,12 @@ def brightspot(brightspot_pdf, tmp_path_factory):
 @pytest.fixture(scope="session")
 def brightspot_swop(brightspot_pdf, tmp_path_factory):
     return run_job(brightspot_pdf, tmp_path_factory.mktemp("jobs_swop"), profile="swop2013")
+
+
+def run_full(pdf, tmp, **kw) -> Job:
+    return Job(run([pdf], tmp, **kw))
+
+
+@pytest.fixture(scope="session")
+def brightspot_run(brightspot_pdf, tmp_path_factory):
+    return run_full(brightspot_pdf, tmp_path_factory.mktemp("runs"), job_id="run")

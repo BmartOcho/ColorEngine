@@ -40,7 +40,15 @@ TYPE_RGB_DBL = _fmt(4, 3)
 TYPE_CMYK_DBL = _fmt(6, 4)
 TYPE_Lab_DBL = _fmt(10, 3)
 
-_CHANNELS = {TYPE_GRAY_DBL: 1, TYPE_RGB_DBL: 3, TYPE_CMYK_DBL: 4, TYPE_Lab_DBL: 3}
+# 8-bit formats for whole-image transforms (BYTES_SH(1), integer).
+TYPE_RGB_8 = (4 << 16) | (3 << 3) | 1
+TYPE_CMYK_8 = (6 << 16) | (4 << 3) | 1
+
+_CHANNELS = {TYPE_GRAY_DBL: 1, TYPE_RGB_DBL: 3, TYPE_CMYK_DBL: 4, TYPE_Lab_DBL: 3, TYPE_RGB_8: 3, TYPE_CMYK_8: 4}
+
+
+def _dtype(fmt: int):
+    return np.uint8 if fmt & 7 == 1 else np.float64
 
 
 def _find_lcms() -> str:
@@ -105,17 +113,20 @@ def _open_bytes(data: bytes) -> _Profile:
 
 class Transform:
     def __init__(self, src: _Profile, src_fmt: int, dst: _Profile, dst_fmt: int,
-                 intent: int = INTENT_RELATIVE_COLORIMETRIC, bpc: bool = True):
-        flags = cmsFLAGS_NOOPTIMIZE | (cmsFLAGS_BLACKPOINTCOMPENSATION if bpc else 0)
+                 intent: int = INTENT_RELATIVE_COLORIMETRIC, bpc: bool = True, optimize: bool = False):
+        # Colour values for the inventory run unoptimised (full precision); image
+        # transforms let LittleCMS precompute a device link, which is still deterministic.
+        flags = (0 if optimize else cmsFLAGS_NOOPTIMIZE) | (cmsFLAGS_BLACKPOINTCOMPENSATION if bpc else 0)
         self._keep = (src, dst)
         self.handle = _lib().cmsCreateTransform(src.handle, src_fmt, dst.handle, dst_fmt, intent, flags)
         if not self.handle:
             raise ValueError("LittleCMS could not build transform")
         self.n_in, self.n_out = _CHANNELS[src_fmt], _CHANNELS[dst_fmt]
+        self.dt_in, self.dt_out = _dtype(src_fmt), _dtype(dst_fmt)
 
     def __call__(self, values) -> np.ndarray:
-        arr = np.ascontiguousarray(np.asarray(values, dtype=np.float64).reshape(-1, self.n_in))
-        out = np.zeros((arr.shape[0], self.n_out), dtype=np.float64)
+        arr = np.ascontiguousarray(np.asarray(values, dtype=self.dt_in).reshape(-1, self.n_in))
+        out = np.zeros((arr.shape[0], self.n_out), dtype=self.dt_out)
         _lib().cmsDoTransform(self.handle, arr.ctypes.data, out.ctypes.data, arr.shape[0])
         return out
 
@@ -228,6 +239,41 @@ class ColorEngine:
         scale = 100.0 if n == 4 else 1.0
         t = Transform(prof, fmt, self._press, TYPE_CMYK_DBL)
         return [float(x) for x in t([c * scale for c in comps])[0]]
+
+
+SRGB_ICC = Path(__import__("pikepdf").__file__).parent / "pdfa" / "data" / "sRGB.icc"
+
+
+def srgb_icc_bytes() -> bytes:
+    """Fixed sRGB IEC61966-2.1 profile bytes: used for both the transform and PNG tagging."""
+    return SRGB_ICC.read_bytes()
+
+
+class ImageCMS:
+    """Whole-image conversions from press CMYK (rendered ink) to display RGB and Lab."""
+
+    def __init__(self, press: PressProfile, display_icc: bytes | None = None, paper_white: bool = True):
+        self.press = _open_bytes(press.path().read_bytes())
+        self.display_bytes = display_icc or srgb_icc_bytes()
+        self.display = _open_bytes(self.display_bytes)
+        intent = INTENT_ABSOLUTE_COLORIMETRIC if paper_white else INTENT_RELATIVE_COLORIMETRIC
+        self.intent = "absolute (paper white)" if paper_white else "relative (ink only)"
+        self._to_rgb = Transform(self.press, TYPE_CMYK_8, self.display, TYPE_RGB_8, intent, bpc=not paper_white,
+                                 optimize=True)
+        self._lab = _Profile(_lib().cmsCreateLab4Profile(None))
+        self._to_lab = Transform(self.press, TYPE_CMYK_8, self._lab, TYPE_Lab_DBL, optimize=True)
+
+    def to_rgb(self, cmyk: np.ndarray) -> np.ndarray:
+        h, w, _ = cmyk.shape
+        return self._to_rgb(cmyk).reshape(h, w, 3)
+
+    def to_lab(self, cmyk: np.ndarray) -> np.ndarray:
+        h, w, _ = cmyk.shape
+        return self._to_lab(cmyk).reshape(h, w, 3)
+
+    def chip(self, cmyk_pct) -> tuple[int, int, int]:
+        v = np.array([[[round(c * 2.55) for c in cmyk_pct]]], dtype=np.uint8)
+        return tuple(int(x) for x in self.to_rgb(v)[0, 0])
 
 
 def delta_e00(lab1, lab2) -> float:

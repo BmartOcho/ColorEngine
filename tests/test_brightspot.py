@@ -39,10 +39,12 @@ def test_3_cross_page_color_drift(brightspot):
     f = drift[0]
     assert f["severity"] == "error" and f["pages"] == [10]
     mapping = {tuple(m["from"]): tuple(m["to"]) for m in f["fix"]["map"]}
-    # The three spec values, each mapped to its nearest value elsewhere in the job.
+    # The three spec values, each mapped to what the same objects carry on the other pages.
     assert mapping[(3.6, 75.9, 97.9, 15.2)] == (14.0, 68.3, 79.7, 22.6)
     assert mapping[(14.0, 32.0, 73.0, 0.0)] == (9.4, 30.8, 66.1, 7.2)
-    assert (0.0, 4.0, 10.0, 0.0) in mapping
+    # Logo cream: its counterpart elsewhere is 0/5.3/12.8 (the numerically nearest, 0/3.9/11.8, is text).
+    assert mapping[(0.0, 4.0, 10.0, 0.0)] == (0.0, 5.3, 12.8, 0.0)
+    assert all(m["match"] == "layout" for m in f["fix"]["map"])
     # p10 also carries 9 pt text at 0/3/9/0 (ΔE00 1.8 from 0/3.9/11.8/0); text always counts.
     assert set(mapping) - {*P10_SET} == {(0.0, 3.0, 9.0, 0.0)}
     for m in f["fix"]["map"]:
