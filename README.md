@@ -1,6 +1,6 @@
 # ColorEngine — Voom proofing engine
 
-Renders a customer PDF the way Voom's presses will print it and flags every reason the render differs from what the customer sees on screen. Full spec: [`docs/Proofing_Engine_Spec.md`](docs/Proofing_Engine_Spec.md).
+Renders a customer PDF the way Voom's presses will print it and flags every reason the render differs from what the customer sees on screen. Full spec: [`docs/Proofing_Engine_Spec.md`](docs/Proofing_Engine_Spec.md). Status, decisions and open items: [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 **Status: Phases 1–3.**
 - Phase 1: inventory, checks, `proof analyze`.
